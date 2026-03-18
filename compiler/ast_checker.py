@@ -136,8 +136,14 @@ class DSLFrontendChecker(ast.NodeVisitor):
                 name=prim_name,
                 is_comb=prim_name.endswith("_comb"),
             )
+            self.primitives[prim_name].observed_ports.update(seen)
         self.primitives[prim_name].call_lines.append(getattr(node, "lineno", -1))
-        self.primitives[prim_name].observed_ports.update(seen)
+
+        self.ensure(
+            self.primitives[prim_name].observed_ports == seen,
+            node,
+            "Not consistent port declaration",
+        )
 
     def check_name_load(self, node: ast.Name) -> None:
         allowed = set(self.params) | set(self.locals)
