@@ -61,11 +61,17 @@ class CallArg:
     name: str
     value: Expr
 
+    def __repr__(self) -> str:
+        return f"{self.name}={format_expr(self.value)}"
+
 
 @dataclass
 class Call(Expr):
     func: str
     args: List[CallArg]
+
+    def __repr__(self) -> str:
+        return format_call(self)
 
 
 @dataclass
@@ -116,3 +122,81 @@ class FuncIR:
     args: List[Var]
     locals: List[Var]
     body: List[Stmt]
+
+    def __repr__(self) -> str:
+        return format_func_ir(self)
+
+
+def format_expr(expr: Expr) -> str:
+    if isinstance(expr, Const):
+        return repr(expr.value)
+    if isinstance(expr, VarRef):
+        return expr.var.name
+    if isinstance(expr, UnaryOp):
+        return f"({expr.op} {format_expr(expr.value)})"
+    if isinstance(expr, BinOp):
+        return f"({format_expr(expr.lhs)} {expr.op} {format_expr(expr.rhs)})"
+    if isinstance(expr, Compare):
+        return f"({format_expr(expr.lhs)} {expr.op} {format_expr(expr.rhs)})"
+    if isinstance(expr, Select):
+        return (
+            f"({format_expr(expr.true_value)} if {format_expr(expr.cond)} "
+            f"else {format_expr(expr.false_value)})"
+        )
+    if isinstance(expr, Call):
+        return format_call(expr)
+    return repr(expr)
+
+
+def format_call(call: Call) -> str:
+    args = ", ".join(repr(arg) for arg in call.args)
+    return f"{call.func}({args})"
+
+
+def format_stmt(stmt: Stmt, indent: int = 0) -> str:
+    prefix = "    " * indent
+    if isinstance(stmt, Assign):
+        return f"{prefix}{stmt.target.name} = {format_expr(stmt.value)}"
+    if isinstance(stmt, ExprStmt):
+        return f"{prefix}{format_expr(stmt.value)}"
+    if isinstance(stmt, IfStmt):
+        lines = [f"{prefix}if {format_expr(stmt.cond)}:"]
+        lines.extend(format_block(stmt.then_body, indent + 1))
+        if stmt.else_body:
+            lines.append(f"{prefix}else:")
+            lines.extend(format_block(stmt.else_body, indent + 1))
+        return "\n".join(lines)
+    if isinstance(stmt, ForRangeStmt):
+        header = (
+            f"{prefix}for {stmt.iter_var.name} in "
+            f"range({format_expr(stmt.start)}, {format_expr(stmt.stop)}):"
+        )
+        lines = [header]
+        lines.extend(format_block(stmt.body, indent + 1))
+        return "\n".join(lines)
+    if isinstance(stmt, WhileStmt):
+        lines = [f"{prefix}while {format_expr(stmt.cond)}:"]
+        lines.extend(format_block(stmt.body, indent + 1))
+        return "\n".join(lines)
+    if isinstance(stmt, ReturnStmt):
+        if stmt.value is None:
+            return f"{prefix}return"
+        return f"{prefix}return {format_expr(stmt.value)}"
+    return f"{prefix}{stmt!r}"
+
+
+def format_block(stmts: List[Stmt], indent: int = 0) -> List[str]:
+    if not stmts:
+        return [f"{'    ' * indent}pass"]
+    return [line for stmt in stmts for line in format_stmt(stmt, indent).splitlines()]
+
+
+def format_func_ir(func_ir: FuncIR) -> str:
+    arg_names = ", ".join(var.name for var in func_ir.args)
+    lines = [f"func {func_ir.name}({arg_names})"]
+    if func_ir.locals:
+        lines.append("locals:")
+        lines.extend(f"    {var.typ.name} {var.name}" for var in func_ir.locals)
+    lines.append("body:")
+    lines.extend(format_block(func_ir.body, indent=1))
+    return "\n".join(lines)

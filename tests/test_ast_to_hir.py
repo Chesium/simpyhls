@@ -3,7 +3,7 @@ from pathlib import Path
 
 from compiler.ast_checker import DSLCheckError
 from compiler.ast_to_hir import lower_source
-from compiler.hir import Assign, BinOp, Call, Compare, Const, ExprStmt, ForRangeStmt, IfStmt, ReturnStmt, Select, VarRef, WhileStmt
+from compiler.hir import Assign, BinOp, Call, Compare, Const, ExprStmt, ForRangeStmt, IfStmt, ReturnStmt, Select, VarRef, WhileStmt, format_expr, format_func_ir
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -153,6 +153,89 @@ def runner(par_n):
         self.assertIsInstance(increment, Assign)
         self.assertIsInstance(increment.value, BinOp)
         self.assertEqual(increment.value.op, '+')
+
+    def test_call_repr_and_formatter_include_named_ports(self) -> None:
+        source = '''
+def runner(par_n):
+    u8_i = 0
+    u8_limit = 0
+    while u8_i < par_n:
+        if u8_i < par_n:
+            tick(i=u8_i)
+        else:
+            u8_limit = u8_i if u8_i < par_n else par_n
+        u8_i = u8_i + 1
+    return u8_limit
+'''
+        func_ir = lower_source(source)
+
+        call = func_ir.body[2].body[0].then_body[0].value
+        self.assertIsInstance(call, Call)
+        self.assertEqual(repr(call), 'tick(i=u8_i)')
+        self.assertEqual(format_expr(call), 'tick(i=u8_i)')
+
+    def test_call_repr_formats_nested_expressions(self) -> None:
+        source = '''
+def fmt_demo(par_n):
+    u8_i = 0
+    u8_sum = 0
+    u8_sum = mix(a=u8_i + 1, b=u8_i if u8_i < par_n else par_n)
+    return u8_sum
+'''
+        func_ir = lower_source(source)
+
+        call = func_ir.body[2].value
+        self.assertIsInstance(call, Call)
+        self.assertEqual(
+            repr(call),
+            'mix(a=(u8_i + 1), b=(u8_i if (u8_i < par_n) else par_n))',
+        )
+
+    def test_format_func_ir_renders_readable_control_flow(self) -> None:
+        source = '''
+def ctrl(par_n):
+    u8_i = 0
+    u8_sum = 0
+    for u8_i in range(1, par_n):
+        if u8_i < par_n and u8_sum < par_n:
+            u8_sum = u8_sum + u8_i
+        else:
+            u8_sum = u8_sum - 1
+    return u8_sum
+'''
+        func_ir = lower_source(source)
+
+        self.assertEqual(
+            format_func_ir(func_ir),
+            "\n".join(
+                [
+                    "func ctrl(par_n)",
+                    "locals:",
+                    "    u8 u8_i",
+                    "    u8 u8_sum",
+                    "body:",
+                    "    u8_i = 0",
+                    "    u8_sum = 0",
+                    "    for u8_i in range(1, par_n):",
+                    "        if ((u8_i < par_n) and (u8_sum < par_n)):",
+                    "            u8_sum = (u8_sum + u8_i)",
+                    "        else:",
+                    "            u8_sum = (u8_sum - 1)",
+                    "    return u8_sum",
+                ]
+            ),
+        )
+
+    def test_func_ir_repr_includes_nested_lu_core_structure(self) -> None:
+        func_ir = lower_source(EXAMPLE.read_text())
+        rendered = repr(func_ir)
+
+        self.assertIn("func lu_core(par_n)", rendered)
+        self.assertIn("locals:", rendered)
+        self.assertIn("for u8_j in range(0, par_n):", rendered)
+        self.assertIn("for u8_i in range(0, par_n):", rendered)
+        self.assertIn("if (u8_i > u8_j):", rendered)
+        self.assertIn("store_LU(i=u8_i, j=u8_j, v=f32_1)", rendered)
 
     def test_invalid_dsl_is_rejected_before_lowering(self) -> None:
         bad_sources = {
