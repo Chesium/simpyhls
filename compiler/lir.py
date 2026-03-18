@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from .hir import Call, Expr, Type, Var, format_expr
+from .hir import Call, Expr, SourceInfo, Type, Var, format_expr
 
 
 BlockId = str
@@ -37,6 +37,7 @@ class AssignOp(Op):
 
     target: Var
     value: Expr
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -50,6 +51,7 @@ class EvalOp(Op):
 
     target: ValueRef
     value: Expr
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -65,6 +67,7 @@ class StartOp(Op):
     call: Call
     result: Optional[Var] = None
     token: Optional[str] = None
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -78,6 +81,7 @@ class CaptureOp(Op):
 
     target: Var
     source: ValueRef
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -90,6 +94,7 @@ class SideEffectOp(Op):
     """
 
     call: Call
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -100,6 +105,7 @@ class Terminator:
 @dataclass
 class Jump(Terminator):
     target: BlockId
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -107,6 +113,7 @@ class Branch(Terminator):
     cond: Expr
     true_target: BlockId
     false_target: BlockId
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -121,11 +128,13 @@ class Await(Terminator):
 
     target: BlockId
     token: Optional[str] = None
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
 class Return(Terminator):
     value: Optional[Expr] = None
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -143,6 +152,7 @@ class FuncLIR:
     locals: List[Var]
     entry: BlockId
     blocks: Dict[BlockId, BasicBlock]
+    temps: List[Var] = field(default_factory=list)
 
     def __repr__(self) -> str:
         return format_func_lir(self)

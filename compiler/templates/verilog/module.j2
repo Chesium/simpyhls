@@ -1,0 +1,20 @@
+{% for comment in module.header_comments %}
+// {{ comment | comment_escape }}
+{% endfor %}
+module {{ module.name }} (
+{% for port in module.ports %}
+    {{ port.direction }} logic {{ port.width | sv_width }}{{ port.name }}{{ "," if not loop.last else "" }}
+{% endfor %}
+);
+
+{% include "_decls.j2" %}
+
+always_ff @(posedge {{ module.clock_signal }} or negedge {{ module.reset_signal }}) begin
+{% include "_seq.j2" %}
+end
+
+always_comb begin
+{% include "_comb_next.j2" %}
+end
+
+endmodule

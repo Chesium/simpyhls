@@ -3,6 +3,15 @@ from typing import List, Optional
 
 
 @dataclass
+class SourceInfo:
+    dsl_lineno: Optional[int] = None
+    dsl_text: Optional[str] = None
+    hir_note: Optional[str] = None
+    lir_block: Optional[str] = None
+    lir_op_index: Optional[int] = None
+
+
+@dataclass
 class Type:
     name: str  # "i32", "f32", "bool"
 
@@ -83,11 +92,13 @@ class Stmt:
 class Assign(Stmt):
     target: Var
     value: Expr
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
 class ExprStmt(Stmt):
     value: Expr
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -95,6 +106,7 @@ class IfStmt(Stmt):
     cond: Expr
     then_body: List[Stmt]
     else_body: List[Stmt]
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -103,17 +115,20 @@ class ForRangeStmt(Stmt):
     start: Expr
     stop: Expr
     body: List[Stmt]
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
 class WhileStmt(Stmt):
     cond: Expr
     body: List[Stmt]
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
 class ReturnStmt(Stmt):
     value: Optional[Expr]
+    source_info: Optional[SourceInfo] = None
 
 
 @dataclass
@@ -122,9 +137,24 @@ class FuncIR:
     args: List[Var]
     locals: List[Var]
     body: List[Stmt]
+    source_info: Optional[SourceInfo] = None
 
     def __repr__(self) -> str:
         return format_func_ir(self)
+
+
+def format_source_info(source_info: Optional[SourceInfo]) -> Optional[str]:
+    if source_info is None:
+        return None
+
+    details: list[str] = []
+    if source_info.dsl_lineno is not None:
+        details.append(f"line {source_info.dsl_lineno}")
+    if source_info.dsl_text:
+        details.append(source_info.dsl_text.strip())
+    elif source_info.hir_note:
+        details.append(source_info.hir_note)
+    return ": ".join(details) if details else None
 
 
 def format_expr(expr: Expr) -> str:

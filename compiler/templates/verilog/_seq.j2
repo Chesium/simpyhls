@@ -1,0 +1,23 @@
+    if (!{{ module.reset_signal }}) begin
+        state <= {{ module.idle_state }};
+{% for reg in module.regs %}
+        {{ reg.name }} <= '0;
+{% endfor %}
+{% for reg in module.temps %}
+        {{ reg.name }} <= '0;
+{% endfor %}
+{% if module.return_reg %}
+        {{ module.return_reg.name }} <= '0;
+{% endif %}
+    end else begin
+        state <= next_state;
+{% for reg in module.regs %}
+        {{ reg.name }} <= next_{{ reg.name }};
+{% endfor %}
+{% for reg in module.temps %}
+        {{ reg.name }} <= next_{{ reg.name }};
+{% endfor %}
+{% if module.return_reg %}
+        {{ module.return_reg.name }} <= next_{{ module.return_reg.name }};
+{% endif %}
+    end

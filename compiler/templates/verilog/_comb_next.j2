@@ -1,0 +1,24 @@
+    next_state = state;
+    {{ module.busy_signal }} = 1'b1;
+    {{ module.done_signal }} = 1'b0;
+{% for reg in module.regs %}
+    next_{{ reg.name }} = {{ reg.name }};
+{% endfor %}
+{% for reg in module.temps %}
+    next_{{ reg.name }} = {{ reg.name }};
+{% endfor %}
+{% if module.return_reg %}
+    next_{{ module.return_reg.name }} = {{ module.return_reg.name }};
+{% endif %}
+{% for port in module.ports if port.direction == 'output' and port.name not in [module.busy_signal, module.done_signal, module.return_signal] %}
+    {{ port.name }} = '0;
+{% endfor %}
+
+    case (state)
+{% for state in module.states %}
+{% include "_state_case.j2" %}
+{% endfor %}
+        default: begin
+            next_state = {{ module.idle_state }};
+        end
+    endcase

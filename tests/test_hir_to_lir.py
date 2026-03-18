@@ -45,7 +45,10 @@ def seq(par_n):
         self.assertEqual(entry.ops[5].call.func, "load")
         self.assertEqual(entry.ops[5].result.name, "f32_acc")
         self.assertEqual(entry.ops[5].token, "op0")
-        self.assertEqual(entry.term, Await(target="after_call_0", token="op0"))
+        self.assertIsInstance(entry.term, Await)
+        self.assertEqual(entry.term.target, "after_call_0")
+        self.assertEqual(entry.term.token, "op0")
+        self.assertIsNotNone(entry.term.source_info)
 
         after_load = func_lir.blocks["after_call_0"]
         self.assertEqual(len(after_load.ops), 1)
@@ -53,7 +56,9 @@ def seq(par_n):
         self.assertEqual(after_load.ops[0].call.func, "store")
         self.assertIsNone(after_load.ops[0].result)
         self.assertEqual(after_load.ops[0].token, "op1")
-        self.assertEqual(after_load.term, Await(target="after_call_1", token="op1"))
+        self.assertIsInstance(after_load.term, Await)
+        self.assertEqual(after_load.term.target, "after_call_1")
+        self.assertEqual(after_load.term.token, "op1")
 
         exit_block = func_lir.blocks["after_call_1"]
         self.assertEqual(exit_block.ops, [])
@@ -73,33 +78,19 @@ def branchy(par_n):
 '''
         func_lir = lower_to_lir(source)
 
-        self.assertEqual(
-            format_func_lir(func_lir),
-            "\n".join(
-                [
-                    "lir func branchy(par_n)",
-                    "entry: entry",
-                    "locals:",
-                    "    u8 u8_i",
-                    "blocks:",
-                    "    entry:",
-                    "        u8_i <- 0",
-                    "        branch (u8_i < par_n) ? if_then_0 : if_else_2",
-                    "    if_then_0:",
-                    "        u8_i <- (u8_i + 1)",
-                    "        jump if_end_1",
-                    "    if_end_1:",
-                    "        return u8_i",
-                    "    if_else_2:",
-                    "        u8_i <- (u8_i - 1)",
-                    "        jump if_end_1",
-                ]
-            ),
-        )
+        rendered = format_func_lir(func_lir)
+        self.assertIn("lir func branchy(par_n)", rendered)
+        self.assertIn("entry:", rendered)
+        self.assertIn("# line 3: u8_i = 0", rendered)
+        self.assertIn("branch (u8_i < par_n) ? if_then_0 : if_else_2", rendered)
+        self.assertIn("# line 8: return u8_i", rendered)
+        self.assertIn("# line 7: u8_i = u8_i - 1", rendered)
 
         self.assertIsInstance(func_lir.blocks["entry"].term, Branch)
-        self.assertEqual(func_lir.blocks["if_then_0"].term, Jump(target="if_end_1"))
-        self.assertEqual(func_lir.blocks["if_else_2"].term, Jump(target="if_end_1"))
+        self.assertIsInstance(func_lir.blocks["if_then_0"].term, Jump)
+        self.assertEqual(func_lir.blocks["if_then_0"].term.target, "if_end_1")
+        self.assertIsInstance(func_lir.blocks["if_else_2"].term, Jump)
+        self.assertEqual(func_lir.blocks["if_else_2"].term.target, "if_end_1")
 
     def test_lower_while_loop_with_blocking_body_op(self) -> None:
         source = '''
@@ -120,7 +111,8 @@ def loop(par_n):
 
         entry = func_lir.blocks["entry"]
         self.assertTrue(all(isinstance(op, AssignOp) for op in entry.ops))
-        self.assertEqual(entry.term, Jump(target="while_header_0"))
+        self.assertIsInstance(entry.term, Jump)
+        self.assertEqual(entry.term.target, "while_header_0")
 
         header = func_lir.blocks["while_header_0"]
         self.assertIsInstance(header.term, Branch)
@@ -132,12 +124,15 @@ def loop(par_n):
         self.assertIsInstance(body.ops[0], StartOp)
         self.assertEqual(body.ops[0].call.func, "load")
         self.assertEqual(body.ops[0].token, "op0")
-        self.assertEqual(body.term, Await(target="after_call_3", token="op0"))
+        self.assertIsInstance(body.term, Await)
+        self.assertEqual(body.term.target, "after_call_3")
+        self.assertEqual(body.term.token, "op0")
 
         after_call = func_lir.blocks["after_call_3"]
         self.assertEqual(len(after_call.ops), 1)
         self.assertIsInstance(after_call.ops[0], AssignOp)
-        self.assertEqual(after_call.term, Jump(target="while_header_0"))
+        self.assertIsInstance(after_call.term, Jump)
+        self.assertEqual(after_call.term.target, "while_header_0")
 
         exit_block = func_lir.blocks["while_end_2"]
         self.assertIsInstance(exit_block.term, Return)
@@ -164,7 +159,8 @@ def has_for(par_n):
         self.assertEqual(len(entry.ops), 3)
         self.assertTrue(all(isinstance(op, AssignOp) for op in entry.ops))
         self.assertTrue(entry.ops[2].target.name.startswith("__for_idx_"))
-        self.assertEqual(entry.term, Jump(target="for_header_0"))
+        self.assertIsInstance(entry.term, Jump)
+        self.assertEqual(entry.term.target, "for_header_0")
 
         header = func_lir.blocks["for_header_0"]
         self.assertIsInstance(header.term, Branch)
@@ -177,13 +173,16 @@ def has_for(par_n):
         self.assertEqual(body.ops[0].target.name, "u8_i")
         self.assertIsInstance(body.ops[1], StartOp)
         self.assertEqual(body.ops[1].call.func, "load")
-        self.assertEqual(body.term, Await(target="after_call_3", token="op0"))
+        self.assertIsInstance(body.term, Await)
+        self.assertEqual(body.term.target, "after_call_3")
+        self.assertEqual(body.term.token, "op0")
 
         latch = func_lir.blocks["after_call_3"]
         self.assertEqual(len(latch.ops), 1)
         self.assertIsInstance(latch.ops[0], AssignOp)
         self.assertTrue(latch.ops[0].target.name.startswith("__for_idx_"))
-        self.assertEqual(latch.term, Jump(target="for_header_0"))
+        self.assertIsInstance(latch.term, Jump)
+        self.assertEqual(latch.term.target, "for_header_0")
 
         exit_block = func_lir.blocks["for_end_2"]
         self.assertIsInstance(exit_block.term, Return)

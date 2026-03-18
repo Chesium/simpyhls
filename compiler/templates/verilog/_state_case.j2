@@ -1,0 +1,41 @@
+        {{ state.name }}: begin
+{% for line in state.comment.lines %}
+            // {{ line | comment_escape }}
+{% endfor %}
+{% if state.name == module.idle_state %}
+            {{ module.busy_signal }} = 1'b0;
+{% endif %}
+{% if state.name == module.done_state %}
+            {{ module.busy_signal }} = 1'b0;
+            {{ module.done_signal }} = 1'b1;
+{% endif %}
+{% for assign in state.next_assigns %}
+            next_{{ assign.target }} = {{ assign.expr }};
+{% endfor %}
+{% for assign in state.output_assigns %}
+            {{ assign.target }} = {{ assign.expr }};
+{% endfor %}
+{% if state.transition.kind == "jump" %}
+            next_state = {{ state.transition.target }};
+{% elif state.transition.kind == "branch" %}
+            if ({{ state.transition.cond }}) begin
+                next_state = {{ state.transition.true_target }};
+            end else begin
+                next_state = {{ state.transition.false_target }};
+            end
+{% elif state.transition.kind == "wait" %}
+            if ({{ state.transition.done_signal }}) begin
+{% for assign in state.transition.capture_assigns %}
+                next_{{ assign.target }} = {{ assign.expr }};
+{% endfor %}
+                next_state = {{ state.transition.target }};
+            end else begin
+                next_state = {{ state.name }};
+            end
+{% elif state.transition.kind == "return" %}
+{% if state.transition.value_expr and module.return_reg %}
+            next_{{ module.return_reg.name }} = {{ state.transition.value_expr }};
+{% endif %}
+            next_state = {{ module.done_state }};
+{% endif %}
+        end

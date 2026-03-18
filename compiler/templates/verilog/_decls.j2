@@ -1,0 +1,19 @@
+typedef enum logic [{{ module.state_width - 1 }}:0] {
+{% for state_name in module.state_names %}
+    {{ state_name }}{{ "," if not loop.last else "" }}
+{% endfor %}
+} state_t;
+
+state_t state;
+state_t next_state;
+
+{% for reg in module.regs %}
+logic {{ reg.width | sv_width }}{{ reg.name }};
+{% endfor %}
+{% for reg in module.temps %}
+logic {{ reg.width | sv_width }}{{ reg.name }};
+{% endfor %}
+
+{% for reg in module.next_regs %}
+logic {{ reg.width | sv_width }}{{ reg.name }};
+{% endfor %}

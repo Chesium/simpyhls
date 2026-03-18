@@ -16,6 +16,7 @@ from .hir import (
     IfStmt,
     ReturnStmt,
     Select,
+    SourceInfo,
     Stmt,
     Type,
     UnaryOp,
@@ -95,7 +96,13 @@ class ASTToHIRLowerer:
             body_start += 1
 
         body = decl_stmts + [self._lower_stmt(stmt) for stmt in func.body[body_start:]]
-        return FuncIR(name=func.name, args=arg_vars, locals=local_vars, body=body)
+        return FuncIR(
+            name=func.name,
+            args=arg_vars,
+            locals=local_vars,
+            body=body,
+            source_info=self._make_source_info(func, note=f"function {func.name}"),
+        )
 
     def _declare_var(self, name: str, *, is_param: bool) -> Var:
         var = Var(name=name, typ=self._infer_var_type(name, is_param=is_param))
@@ -138,10 +145,13 @@ class ASTToHIRLowerer:
         if isinstance(stmt, ast.If):
             return self._lower_if(stmt)
         if isinstance(stmt, ast.Expr):
-            return ExprStmt(value=self._lower_expr(stmt.value))
+            return ExprStmt(
+                value=self._lower_expr(stmt.value),
+                source_info=self._make_source_info(stmt),
+            )
         if isinstance(stmt, ast.Return):
             value = self._lower_expr(stmt.value) if stmt.value is not None else None
-            return ReturnStmt(value=value)
+            return ReturnStmt(value=value, source_info=self._make_source_info(stmt))
         raise self._err(stmt, f"Unsupported statement type: {type(stmt).__name__}")
 
     def _lower_assign(self, node: ast.Assign) -> Assign:
@@ -151,7 +161,11 @@ class ASTToHIRLowerer:
 
         target_var = self._lookup_var(target.id, target)
         value = self._lower_expr(node.value, expected_type=target_var.typ)
-        return Assign(target=target_var, value=value)
+        return Assign(
+            target=target_var,
+            value=value,
+            source_info=self._make_source_info(node),
+        )
 
     def _lower_for(self, node: ast.For) -> ForRangeStmt:
         if not isinstance(node.target, ast.Name):
@@ -172,18 +186,33 @@ class ASTToHIRLowerer:
             raise self._err(node.iter, "Expected range(stop) or range(start, stop)")
 
         body = [self._lower_stmt(stmt) for stmt in node.body]
-        return ForRangeStmt(iter_var=iter_var, start=start, stop=stop, body=body)
+        return ForRangeStmt(
+            iter_var=iter_var,
+            start=start,
+            stop=stop,
+            body=body,
+            source_info=self._make_source_info(node),
+        )
 
     def _lower_while(self, node: ast.While) -> WhileStmt:
         cond = self._lower_expr(node.test, expected_type=_BOOL_TYPE)
         body = [self._lower_stmt(stmt) for stmt in node.body]
-        return WhileStmt(cond=cond, body=body)
+        return WhileStmt(
+            cond=cond,
+            body=body,
+            source_info=self._make_source_info(node),
+        )
 
     def _lower_if(self, node: ast.If) -> IfStmt:
         cond = self._lower_expr(node.test, expected_type=_BOOL_TYPE)
         then_body = [self._lower_stmt(stmt) for stmt in node.body]
         else_body = [self._lower_stmt(stmt) for stmt in node.orelse]
-        return IfStmt(cond=cond, then_body=then_body, else_body=else_body)
+        return IfStmt(
+            cond=cond,
+            then_body=then_body,
+            else_body=else_body,
+            source_info=self._make_source_info(node),
+        )
 
     def _lower_expr(self, expr: ast.AST, expected_type: Optional[Type] = None) -> Expr:
         if isinstance(expr, ast.Name):
@@ -255,6 +284,13 @@ class ASTToHIRLowerer:
             for keyword in expr.keywords
         ]
         return Call(func=expr.func.id, args=args)
+
+    def _make_source_info(self, node: ast.AST, note: Optional[str] = None) -> SourceInfo:
+        return SourceInfo(
+            dsl_lineno=getattr(node, "lineno", None),
+            dsl_text=ast.get_source_segment(self.source, node) if self.source else None,
+            hir_note=note,
+        )
 
 
 def lower_source(source: str) -> FuncIR:
