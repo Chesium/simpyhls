@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from .hir import Assign, BinOp, Call, Compare, Const, Expr, ExprStmt, ForRangeStmt, FuncIR, IfStmt, ReturnStmt, Stmt, VarRef, WhileStmt
+from .hir import Assign, BinOp, Call, Compare, Const, Expr, ExprStmt, ForRangeStmt, FuncIR, IfStmt, ReturnStmt, Stmt, Type, Var, VarRef, WhileStmt
 from .lir import AssignOp, Await, BasicBlock, Branch, FuncLIR, Jump, Return, SideEffectOp, StartOp
 
 
@@ -42,6 +42,7 @@ class BlockBuilder:
 class HIRToLIRLowerer:
     def __init__(self) -> None:
         self.builder = BlockBuilder(blocks={"entry": BasicBlock(label="entry")})
+        self.next_hidden_var_id = 0
 
     def lower_func(self, func_ir: FuncIR) -> FuncLIR:
         current = self._lower_stmts(func_ir.body, "entry")
@@ -156,24 +157,26 @@ class HIRToLIRLowerer:
         header_label = self.builder.make_block("for_header")
         body_label = self.builder.make_block("for_body")
         exit_label = self.builder.make_block("for_end")
+        loop_index = self._fresh_hidden_var("for_idx", stmt.iter_var.typ)
 
-        self.builder.add_op(current, AssignOp(target=stmt.iter_var, value=stmt.start))
+        self.builder.add_op(current, AssignOp(target=loop_index, value=stmt.start))
         self.builder.terminate(current, Jump(header_label))
 
-        cond = Compare(op="<", lhs=VarRef(stmt.iter_var), rhs=stmt.stop)
+        cond = Compare(op="<", lhs=VarRef(loop_index), rhs=stmt.stop)
         self.builder.terminate(
             header_label,
             Branch(cond=cond, true_target=body_label, false_target=exit_label),
         )
 
+        self.builder.add_op(body_label, AssignOp(target=stmt.iter_var, value=VarRef(loop_index)))
         body_exit = self._lower_stmts(stmt.body, body_label)
         if body_exit is not None and self.builder.blocks[body_exit].term is None:
             step = BinOp(
                 op="+",
-                lhs=VarRef(stmt.iter_var),
-                rhs=Const(value=1, typ=stmt.iter_var.typ),
+                lhs=VarRef(loop_index),
+                rhs=Const(value=1, typ=loop_index.typ),
             )
-            self.builder.add_op(body_exit, AssignOp(target=stmt.iter_var, value=step))
+            self.builder.add_op(body_exit, AssignOp(target=loop_index, value=step))
             self.builder.terminate(body_exit, Jump(header_label))
 
         return exit_label
@@ -213,6 +216,11 @@ class HIRToLIRLowerer:
 
     def _is_blocking_call(self, call: Call) -> bool:
         return not call.func.endswith("_comb")
+
+    def _fresh_hidden_var(self, prefix: str, typ: Type) -> Var:
+        name = f"__{prefix}_{self.next_hidden_var_id}"
+        self.next_hidden_var_id += 1
+        return Var(name=name, typ=typ)
 
 
 def lower_func(func_ir: FuncIR) -> FuncLIR:

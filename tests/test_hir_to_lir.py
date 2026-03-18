@@ -163,7 +163,7 @@ def has_for(par_n):
         entry = func_lir.blocks["entry"]
         self.assertEqual(len(entry.ops), 3)
         self.assertTrue(all(isinstance(op, AssignOp) for op in entry.ops))
-        self.assertEqual(entry.ops[2].target.name, "u8_i")
+        self.assertTrue(entry.ops[2].target.name.startswith("__for_idx_"))
         self.assertEqual(entry.term, Jump(target="for_header_0"))
 
         header = func_lir.blocks["for_header_0"]
@@ -172,15 +172,17 @@ def has_for(par_n):
         self.assertEqual(header.term.false_target, "for_end_2")
 
         body = func_lir.blocks["for_body_1"]
-        self.assertEqual(len(body.ops), 1)
-        self.assertIsInstance(body.ops[0], StartOp)
-        self.assertEqual(body.ops[0].call.func, "load")
+        self.assertEqual(len(body.ops), 2)
+        self.assertIsInstance(body.ops[0], AssignOp)
+        self.assertEqual(body.ops[0].target.name, "u8_i")
+        self.assertIsInstance(body.ops[1], StartOp)
+        self.assertEqual(body.ops[1].call.func, "load")
         self.assertEqual(body.term, Await(target="after_call_3", token="op0"))
 
         latch = func_lir.blocks["after_call_3"]
         self.assertEqual(len(latch.ops), 1)
         self.assertIsInstance(latch.ops[0], AssignOp)
-        self.assertEqual(latch.ops[0].target.name, "u8_i")
+        self.assertTrue(latch.ops[0].target.name.startswith("__for_idx_"))
         self.assertEqual(latch.term, Jump(target="for_header_0"))
 
         exit_block = func_lir.blocks["for_end_2"]
