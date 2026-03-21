@@ -4,7 +4,7 @@ from typing import Optional
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from .lir import FuncLIR
-from .lir_to_verilog_model import RTLModuleConfig, lower_to_verilog_model
+from .lir_to_verilog_model import RTLModule, RTLModuleConfig, lower_to_verilog_model
 from .primitive_rtl import PrimitiveRTLRegistry
 
 
@@ -51,10 +51,14 @@ def generate_verilog(
         else PrimitiveRTLRegistry(primitive_registry)
     )
     rtl_module = lower_to_verilog_model(func_lir, registry, module_config)
-    rendered = build_jinja_env().get_template("module.j2").render(module=rtl_module)
+    rendered = render_verilog_module(rtl_module)
     if include_debug:
         return rendered, rtl_module.debug
     return rendered
 
 
-__all__ = ["RTLModuleConfig", "build_jinja_env", "generate_verilog"]
+def render_verilog_module(rtl_module: RTLModule) -> str:
+    return build_jinja_env().get_template("module.j2").render(module=rtl_module)
+
+
+__all__ = ["RTLModuleConfig", "build_jinja_env", "generate_verilog", "render_verilog_module"]
