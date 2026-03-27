@@ -4,7 +4,14 @@ from pathlib import Path
 from compiler.ast_to_hir import lower_source
 from compiler.hir_to_lir import lower_func
 from compiler.lir import Await, StartOp
-from compiler.lir_to_verilog_model import RTLBranchTransition, RTLModuleConfig, RTLReturnTransition, RTLWaitTransition, lower_to_verilog_model
+from compiler.lir_to_verilog_model import (
+    RTLBranchTransition,
+    RTLJumpTransition,
+    RTLModuleConfig,
+    RTLReturnTransition,
+    RTLWaitTransition,
+    lower_to_verilog_model,
+)
 from compiler.primitive_rtl import PrimitiveRTLRegistry, PrimitiveRTLSpec
 from compiler.verilog_codegen import generate_verilog
 
@@ -65,10 +72,13 @@ def io_kernel(par_n):
         module = lower_to_model(source, default_registry())
         state_map = {state.lir_label: state for state in module.states}
 
-        self.assertIsInstance(state_map["entry"].transition, RTLWaitTransition)
-        self.assertEqual(state_map["entry"].transition.done_signal, "load_done")
+        self.assertIsInstance(state_map["entry"].transition, RTLJumpTransition)
+        self.assertEqual(state_map["entry"].transition.target, "S_ENTRY_WAIT")
         self.assertEqual(state_map["entry"].primitive_start.start_signal, "load_start")
         self.assertEqual(state_map["entry"].primitive_start.result_signal, "load_result")
+        self.assertIsInstance(state_map["entry__wait"].transition, RTLWaitTransition)
+        self.assertEqual(state_map["entry__wait"].transition.done_signal, "load_done")
+        self.assertIsNone(state_map["entry__wait"].primitive_start)
 
     def test_view_model_keeps_hidden_for_index_internal(self) -> None:
         source = '''
@@ -123,9 +133,42 @@ def seq(par_n):
 
         self.assertIn("load_start = 1'b1;", verilog)
         self.assertIn("store_start = 1'b1;", verilog)
-        self.assertIn("add1_comb(u8_i)", verilog)
+        self.assertIn("add1_comb(8'd0)", verilog)
         self.assertNotIn("add1_comb_start", verilog)
         self.assertNotIn("touch_comb_start", verilog)
+
+    def test_blocking_call_arguments_see_same_state_comb_updates(self) -> None:
+        source = '''
+def seq(par_n):
+    u8_i = 0
+    u8_x = 0
+    u8_x = add1_comb(v=u8_i)
+    store(i=u8_i, v=u8_x)
+    return u8_x
+'''
+        verilog = generate_verilog(lower_func(lower_source(source)), default_registry())
+
+        self.assertIn("next_u8_x = add1_comb(8'd0);", verilog)
+        self.assertIn("store_v = add1_comb(8'd0);", verilog)
+        self.assertNotIn("store_v = u8_x;", verilog)
+
+    def test_blocking_start_is_a_one_cycle_pulse_with_separate_wait_state(self) -> None:
+        source = '''
+def seq(par_n):
+    u8_i = 0
+    store(i=u8_i, v=u8_i)
+'''
+        verilog = generate_verilog(lower_func(lower_source(source)), default_registry())
+
+        self.assertIn("S_ENTRY_WAIT", verilog)
+        self.assertIn("next_state = S_ENTRY_WAIT;", verilog)
+        self.assertIn("S_ENTRY: begin", verilog)
+        self.assertIn("store_start = 1'b1;", verilog)
+
+        wait_state_section = verilog.split("S_ENTRY_WAIT: begin", 1)[1].split("end", 1)[0]
+        self.assertNotIn("store_start = 1'b1;", wait_state_section)
+        self.assertIn("if (store_done) begin", wait_state_section)
+        self.assertRegex(wait_state_section, r"next_state = S_[A-Z0-9_]+;")
 
     def test_generated_verilog_for_lu_core_is_deterministic_and_comment_rich(self) -> None:
         registry = default_registry()
@@ -143,6 +186,7 @@ def seq(par_n):
         self.assertIn("div_start = 1'b1;", verilog_a)
         self.assertIn("store_LU_start = 1'b1;", verilog_a)
         self.assertIn("neg_comb(", verilog_a)
+        self.assertIn("store_LU_v = neg_comb(f32_1);", verilog_a)
         self.assertNotIn("endend", verilog_a)
         self.assertNotIn("endcaseend", verilog_a)
         self.assertGreater(debug_a["wait_state_count"], 0)

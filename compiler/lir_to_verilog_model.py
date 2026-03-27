@@ -160,7 +160,12 @@ def _infer_expr_type(expr: Expr) -> Optional[Type]:
     return None
 
 
-def render_verilog_expr(expr: Expr, registry: PrimitiveRTLRegistry) -> str:
+def render_verilog_expr(
+    expr: Expr,
+    registry: PrimitiveRTLRegistry,
+    env: Optional[dict[str, str]] = None,
+) -> str:
+    env = env or {}
     if isinstance(expr, Const):
         if isinstance(expr.value, bool):
             return "1'b1" if expr.value else "1'b0"
@@ -169,24 +174,24 @@ def render_verilog_expr(expr: Expr, registry: PrimitiveRTLRegistry) -> str:
             return f"-{width}'sd{abs(expr.value)}"
         return f"{width}'d{expr.value}"
     if isinstance(expr, VarRef):
-        return sanitize_identifier(expr.var.name)
+        return env.get(expr.var.name, sanitize_identifier(expr.var.name))
     if isinstance(expr, UnaryOp):
-        return f"({expr.op} {render_verilog_expr(expr.value, registry)})"
+        return f"({expr.op} {render_verilog_expr(expr.value, registry, env)})"
     if isinstance(expr, BinOp):
-        lhs = render_verilog_expr(expr.lhs, registry)
-        rhs = render_verilog_expr(expr.rhs, registry)
+        lhs = render_verilog_expr(expr.lhs, registry, env)
+        rhs = render_verilog_expr(expr.rhs, registry, env)
         op = "&&" if expr.op == "and" else "||" if expr.op == "or" else expr.op
         return f"({lhs} {op} {rhs})"
     if isinstance(expr, Compare):
         return (
-            f"({render_verilog_expr(expr.lhs, registry)} {expr.op} "
-            f"{render_verilog_expr(expr.rhs, registry)})"
+            f"({render_verilog_expr(expr.lhs, registry, env)} {expr.op} "
+            f"{render_verilog_expr(expr.rhs, registry, env)})"
         )
     if isinstance(expr, Select):
         return (
-            f"({render_verilog_expr(expr.cond, registry)} ? "
-            f"{render_verilog_expr(expr.true_value, registry)} : "
-            f"{render_verilog_expr(expr.false_value, registry)})"
+            f"({render_verilog_expr(expr.cond, registry, env)} ? "
+            f"{render_verilog_expr(expr.true_value, registry, env)} : "
+            f"{render_verilog_expr(expr.false_value, registry, env)})"
         )
     if isinstance(expr, Call):
         spec = registry.require(expr.func)
@@ -194,7 +199,7 @@ def render_verilog_expr(expr: Expr, registry: PrimitiveRTLRegistry) -> str:
             raise VerilogModelError(
                 f"Blocking primitive '{expr.func}' cannot appear in a combinational expression"
             )
-        args = ", ".join(render_verilog_expr(arg.value, registry) for arg in expr.args)
+        args = ", ".join(render_verilog_expr(arg.value, registry, env) for arg in expr.args)
         return f"{sanitize_identifier(spec.comb_function or spec.name)}({args})"
     raise VerilogModelError(f"Unsupported expression type '{type(expr).__name__}' for Verilog rendering")
 
@@ -240,6 +245,10 @@ def _state_name(label: str) -> str:
     return f"S_{sanitize_identifier(label).upper()}"
 
 
+def _wait_state_name(label: str) -> str:
+    return f"{_state_name(label)}_WAIT"
+
+
 def _comment_lines(label: str, block_comment: Optional[str], emit_comments: bool) -> RTLComment:
     if not emit_comments:
         return RTLComment()
@@ -259,10 +268,20 @@ def lower_to_verilog_model(
     arg_widths, result_widths = _collect_blocking_port_widths(func_lir, primitive_registry)
 
     state_lookup = {label: _state_name(label) for label in func_lir.blocks}
+    wait_state_lookup = {
+        label: _wait_state_name(label)
+        for label, block in func_lir.blocks.items()
+        if isinstance(block.term, Await)
+    }
     idle_state = "S_IDLE"
     done_state = "S_DONE"
     entry_state = state_lookup[func_lir.entry]
-    state_names = [idle_state, *state_lookup.values(), done_state]
+    state_names = [idle_state]
+    for label in func_lir.blocks:
+        state_names.append(state_lookup[label])
+        if label in wait_state_lookup:
+            state_names.append(wait_state_lookup[label])
+    state_names.append(done_state)
     state_width = max(1, math.ceil(math.log2(len(state_names))))
 
     ports = [
@@ -352,19 +371,22 @@ def lower_to_verilog_model(
         )
 
         pending_start: Optional[tuple[PrimitiveRTLSpec, StartOp]] = None
+        expr_env: dict[str, str] = {}
         for op in block.ops:
             if isinstance(op, AssignOp):
+                rendered_expr = render_verilog_expr(op.value, primitive_registry, expr_env)
                 state.next_assigns.append(
                     RTLAssign(
                         target=sanitize_identifier(op.target.name),
-                        expr=render_verilog_expr(op.value, primitive_registry),
+                        expr=rendered_expr,
                     )
                 )
+                expr_env[op.target.name] = rendered_expr
                 continue
 
             if isinstance(op, SideEffectOp):
                 state.comment.lines.append(
-                    f"comb expr: {render_verilog_expr(op.call, primitive_registry)}"
+                    f"comb expr: {render_verilog_expr(op.call, primitive_registry, expr_env)}"
                 )
                 continue
 
@@ -377,7 +399,7 @@ def lower_to_verilog_model(
                 arg_assigns = [
                     RTLAssign(
                         target=sanitize_identifier(spec.arg_signals[arg.name]),
-                        expr=render_verilog_expr(arg.value, primitive_registry),
+                        expr=render_verilog_expr(arg.value, primitive_registry, expr_env),
                     )
                     for arg in op.call.args
                 ]
@@ -405,7 +427,7 @@ def lower_to_verilog_model(
             state.transition = RTLJumpTransition(target=state_lookup[term.target])
         elif isinstance(term, Branch):
             state.transition = RTLBranchTransition(
-                cond=render_verilog_expr(term.cond, primitive_registry),
+                cond=render_verilog_expr(term.cond, primitive_registry, expr_env),
                 true_target=state_lookup[term.true_target],
                 false_target=state_lookup[term.false_target],
             )
@@ -415,6 +437,9 @@ def lower_to_verilog_model(
                     f"LIR block '{label}' awaits a primitive without a preceding StartOp"
                 )
             spec, start_op = pending_start
+            wait_state_name = wait_state_lookup[label]
+            state.transition = RTLJumpTransition(target=wait_state_name)
+
             capture_assigns: list[RTLAssign] = []
             if start_op.result is not None:
                 if not spec.result_signal:
@@ -427,14 +452,26 @@ def lower_to_verilog_model(
                         expr=sanitize_identifier(spec.result_signal),
                     )
                 )
-            state.transition = RTLWaitTransition(
-                done_signal=sanitize_identifier(spec.done_signal),
-                target=state_lookup[term.target],
-                capture_assigns=capture_assigns,
+            states.append(state)
+
+            wait_comment = _comment_lines(label, block.comment, config.emit_comments)
+            if config.emit_comments:
+                wait_comment.lines.append(f"wait for blocking primitive: {spec.name}")
+            wait_state = RTLState(
+                name=wait_state_name,
+                lir_label=f"{label}__wait",
+                comment=wait_comment,
+                transition=RTLWaitTransition(
+                    done_signal=sanitize_identifier(spec.done_signal),
+                    target=state_lookup[term.target],
+                    capture_assigns=capture_assigns,
+                ),
             )
+            states.append(wait_state)
+            continue
         elif isinstance(term, Return):
             state.transition = RTLReturnTransition(
-                value_expr=render_verilog_expr(term.value, primitive_registry)
+                value_expr=render_verilog_expr(term.value, primitive_registry, expr_env)
                 if term.value is not None
                 else None
             )
@@ -495,6 +532,7 @@ def lower_to_verilog_model(
         return_signal=return_signal,
         debug={
             "state_lookup": state_lookup,
+            "wait_state_lookup": wait_state_lookup,
             "wait_state_count": sum(
                 1 for state in states if getattr(state.transition, "kind", None) == "wait"
             ),
