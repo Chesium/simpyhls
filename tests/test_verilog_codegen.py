@@ -137,6 +137,33 @@ def seq(par_n):
         self.assertNotIn("add1_comb_start", verilog)
         self.assertNotIn("touch_comb_start", verilog)
 
+    def test_generated_verilog_renders_python_not_as_sv_bang(self) -> None:
+        source = '''
+def seq(par_n):
+    u1_f = 0
+    if not u1_f:
+        u1_f = 1
+    return u1_f
+'''
+        verilog = generate_verilog(lower_func(lower_source(source)), default_registry())
+
+        self.assertIn("if ((! 1'd0)) begin", verilog)
+        self.assertNotIn("if ((not 1'd0)) begin", verilog)
+
+    def test_generated_verilog_supports_package_imports(self) -> None:
+        source = '''
+def seq(par_n):
+    u8_i = 0
+    return u8_i
+'''
+        verilog = generate_verilog(
+            lower_func(lower_source(source)),
+            default_registry(),
+            RTLModuleConfig(package_imports=("FloodingCombPkg::*",)),
+        )
+
+        self.assertIn("import FloodingCombPkg::*;", verilog)
+
     def test_blocking_call_arguments_see_same_state_comb_updates(self) -> None:
         source = '''
 def seq(par_n):

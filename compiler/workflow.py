@@ -418,9 +418,15 @@ def write_compilation_outputs(
     artifact: CompilationArtifact,
     verilog_path: str | Path,
     report_path: Optional[str | Path] = None,
+    hir_path: Optional[str | Path] = None,
+    lir_path: Optional[str | Path] = None,
 ) -> None:
     verilog_file = Path(verilog_path)
     verilog_file.write_text(artifact.verilog)
+    if hir_path is not None:
+        Path(hir_path).write_text(artifact.hir.__repr__())
+    if lir_path is not None:
+        Path(lir_path).write_text(artifact.lir.__repr__())
     if report_path is not None:
         Path(report_path).write_text(format_codegen_report(artifact.report))
 

@@ -7,6 +7,10 @@ module {{ module.name }} (
 {% endfor %}
 );
 
+{% for package_import in module.package_imports %}
+import {{ package_import }};
+{% endfor %}
+
 {% include "_decls.j2" %}
 
 always_ff @(posedge {{ module.clock_signal }} or negedge {{ module.reset_signal }}) begin

@@ -11,7 +11,7 @@
     next_{{ module.return_reg.name }} = {{ module.return_reg.name }};
 {% endif %}
 {% for port in module.ports if port.direction == 'output' and port.name not in [module.busy_signal, module.done_signal, module.return_signal] %}
-    {{ port.name }} = '0;
+    {{ port.name }} =0;
 {% endfor %}
 
     case (state)

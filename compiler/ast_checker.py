@@ -185,12 +185,11 @@ class DSLFrontendChecker(ast.NodeVisitor):
         self.ensure(not args.kw_defaults, node, "Keyword defaults are not supported")
 
         self.params = [a.arg for a in args.args]
-        for a in args.args:
-            self.ensure(
-                a.arg not in self.params[:-1],
-                node,
-                f"Duplicate parameter name '{a.arg}'",
-            )
+        self.ensure(
+            len(list(set(args.args))) == len(args.args),
+            node,
+            "Duplicate parameter name",
+        )
 
         # declaration phase: contiguous Assign(Name = int-constant) at top
         idx = 0

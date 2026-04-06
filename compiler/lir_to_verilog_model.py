@@ -22,6 +22,7 @@ class RTLModuleConfig:
     done_signal: str = "done"
     return_signal: str = "ret_val"
     emit_comments: bool = True
+    package_imports: tuple[str, ...] = ()
 
 
 @dataclass
@@ -102,6 +103,7 @@ class RTLState:
 class RTLModule:
     name: str
     header_comments: list[str]
+    package_imports: list[str]
     ports: list[RTLPort]
     regs: list[RTLReg]
     temps: list[RTLReg]
@@ -176,7 +178,8 @@ def render_verilog_expr(
     if isinstance(expr, VarRef):
         return env.get(expr.var.name, sanitize_identifier(expr.var.name))
     if isinstance(expr, UnaryOp):
-        return f"({expr.op} {render_verilog_expr(expr.value, registry, env)})"
+        op = "!" if expr.op == "not" else expr.op
+        return f"({op} {render_verilog_expr(expr.value, registry, env)})"
     if isinstance(expr, BinOp):
         lhs = render_verilog_expr(expr.lhs, registry, env)
         rhs = render_verilog_expr(expr.rhs, registry, env)
@@ -513,6 +516,7 @@ def lower_to_verilog_model(
     return RTLModule(
         name=sanitize_identifier(config.module_name or func_lir.name),
         header_comments=header_comments,
+        package_imports=list(config.package_imports),
         ports=ports,
         regs=regs,
         temps=temps,
