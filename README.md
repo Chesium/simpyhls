@@ -66,6 +66,39 @@ def lu_core(par_n):
             store_LU(i=u8_i, j=u8_j, v=f32_1)
 ```
 
+### Streaming stamping example
+
+The new [examples/stamping_core.dsl.py](c:/C/EE2026/simpyhls/examples/stamping_core.dsl.py) shows how to rewrite the circuit-stamping notebook into an HLS-ready kernel.
+
+The intended split is:
+
+- host preprocessing assigns fixed matrix indices for non-ground nodes
+- host preprocessing assigns one `aux` branch-variable index to every voltage-source-like element
+- the DSL kernel streams over a preprocessed netlist and issues matrix/vector accumulation primitives
+
+This avoids dynamic matrix growth inside the DSL and keeps the kernel aligned with the existing frontend and FSM-style backend.
+
+Recommended element encoding:
+
+- kind `1`: resistor
+- kind `2`: independent current source
+- kind `3`: independent voltage source
+- kind `4`: VCVS
+- kind `5`: simple NPN model
+- index sentinel `65535`: ground / unused field
+
+Recommended blocking primitive interface:
+
+- `fetchElemKind(idx)` -> element kind
+- `fetchElemN0(idx)` / `fetchElemN1(idx)` / `fetchElemN2(idx)` / `fetchElemN3(idx)` -> preprocessed matrix indices
+- `fetchElemAux(idx)` -> preassigned branch-variable index or sentinel
+- `fetchElemVal0(idx)` / `fetchElemVal1(idx)` -> element parameters
+- `accumA(i, j, delta)` -> add `delta` into MNA matrix `A[i][j]`
+- `accumJ(i, delta)` -> add `delta` into RHS vector `J[i]`
+- `neg_comb(v)` -> combinational sign flip used for negative stamp terms
+
+With that interface, `stamping_core(par_elem_n)` becomes a single-pass stamping kernel over a fixed-size MNA system.
+
 ## Installation
 
 The project currently targets Python `>=3.14` and uses Jinja for Verilog rendering.
