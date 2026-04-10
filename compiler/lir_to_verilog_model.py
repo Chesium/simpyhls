@@ -1,5 +1,6 @@
 import math
 import re
+import struct
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -171,6 +172,17 @@ def render_verilog_expr(
     if isinstance(expr, Const):
         if isinstance(expr.value, bool):
             return "1'b1" if expr.value else "1'b0"
+        if expr.typ.name.startswith("f"):
+            width = width_from_type(expr.typ)
+            if width == 32:
+                bits = struct.unpack(">I", struct.pack(">f", float(expr.value)))[0]
+                return f"32'h{bits:08x}"
+            if width == 64:
+                bits = struct.unpack(">Q", struct.pack(">d", float(expr.value)))[0]
+                return f"64'h{bits:016x}"
+            raise VerilogModelError(
+                f"Unsupported floating-point constant width {width} for value {expr.value!r}"
+            )
         width = width_from_type(expr.typ)
         if isinstance(expr.value, int) and expr.value < 0:
             return f"-{width}'sd{abs(expr.value)}"

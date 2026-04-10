@@ -164,6 +164,17 @@ def seq(par_n):
 
         self.assertIn("import FloodingCombPkg::*;", verilog)
 
+    def test_generated_verilog_renders_f32_constants_as_ieee_bits(self) -> None:
+        source = '''
+def seq():
+    f32_x = 1
+    return f32_x
+'''
+        verilog = generate_verilog(lower_func(lower_source(source)), default_registry())
+
+        self.assertIn("next_f32_x = 32'h3f800000;", verilog)
+        self.assertNotIn("next_f32_x = 32'd1;", verilog)
+
     def test_blocking_call_arguments_see_same_state_comb_updates(self) -> None:
         source = '''
 def seq(par_n):
