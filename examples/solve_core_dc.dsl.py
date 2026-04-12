@@ -20,8 +20,8 @@
 # [0, par_elem_n). Each element is exposed through blocking fetch primitives:
 #
 #   fetchElemKind(idx) -> element kind
-#   fetchElemN0(idx)   -> node 0 (1-based node id, 0 means ground)
-#   fetchElemN1(idx)   -> node 1 (1-based node id, 0 means ground)
+#   fetchElemN0(idx)   -> node 0 (zero-based matrix row, 255 means ground)
+#   fetchElemN1(idx)   -> node 1 (zero-based matrix row, 255 means ground)
 #   fetchElemVal0(idx) -> element value
 #
 # Element kinds supported by this kernel:
@@ -30,7 +30,7 @@
 #   3 = voltage source V(node0, node1, voltage)
 #
 # Host-side preprocessing is intentionally minimal in this version:
-# - nodes stay as raw circuit node numbers
+# - nodes are already compact solver row indices
 # - only R / I / V are supported
 # - branch-variable allocation for voltage sources happens inside this kernel
 #
@@ -41,10 +41,9 @@
 #
 # Indexing conventions
 # --------------------
-# - Circuit node 0 is ground and is not represented in the matrix.
-# - Circuit nodes 1..par_node_n map to matrix rows/cols 0..par_node_n-1.
-# - Ground is converted to the sentinel value 65535 inside the kernel so the
-#   stamping code can skip matrix updates touching ground.
+# - Netlist node values already match matrix row/col indices 0..par_node_n-1.
+# - Ground uses the sentinel value 255 so the stamping code can skip matrix
+#   updates touching ground.
 # - Additional MNA branch variables for voltage sources are allocated densely
 #   after the node-voltage unknowns.
 #
@@ -70,16 +69,16 @@ def solve_core_dc(par_elem_n, par_node_n):
     f32_4 = 0
     f32_5 = 1
     u8_kind = 0
-    u16_aux = 0
+    u8_aux = 0
     u16_dim = 0
     u16_e = 0
     u16_i = 0
     u16_j = 0
     u16_k = 0
     u16_m = 0
-    u16_n0 = 0
-    u16_n1 = 0
-    u16_next_aux = 0
+    u8_n0 = 0
+    u8_n1 = 0
+    u8_next_aux = 0
     u16_pivot = 0
 
     # ------------------------------------------------------------------
@@ -117,25 +116,12 @@ def solve_core_dc(par_elem_n, par_node_n):
     # - allocate branch-variable indices for voltage sources
     # - emit dense MNA updates into A and J through accumulate primitives
     # ------------------------------------------------------------------
-    u16_next_aux = par_node_n
+    u8_next_aux = par_node_n
     for u16_e in range(par_elem_n):
         u8_kind = fetchElemKind(idx=u16_e)
-        u16_n0 = fetchElemN0(idx=u16_e)
-        u16_n1 = fetchElemN1(idx=u16_e)
+        u8_n0 = fetchElemN0(idx=u16_e)
+        u8_n1 = fetchElemN1(idx=u16_e)
         f32_1 = fetchElemVal0(idx=u16_e)
-
-        # Convert raw circuit node numbers to dense matrix indices.
-        # Ground (node 0) is mapped to a sentinel so the stamp rules can simply
-        # guard on `!= 65535` before touching the matrix or RHS vector.
-        if u16_n0 != 0:
-            u16_n0 = u16_n0 - 1
-        else:
-            u16_n0 = 65535
-
-        if u16_n1 != 0:
-            u16_n1 = u16_n1 - 1
-        else:
-            u16_n1 = 65535
 
         # Resistor stamp:
         #   g = 1 / R
@@ -143,40 +129,40 @@ def solve_core_dc(par_elem_n, par_node_n):
         #   [ -g  +g ]
         if u8_kind == 1:
             f32_2 = div(a=f32_5, b=f32_1)
-            if u16_n0 != 65535:
-                accumA(i=u16_n0, j=u16_n0, delta=f32_2)
-                if u16_n1 != 65535:
+            if u8_n0 != 255:
+                accumA(i=u8_n0, j=u8_n0, delta=f32_2)
+                if u8_n1 != 255:
                     f32_3 = neg_comb(v=f32_2)
-                    accumA(i=u16_n0, j=u16_n1, delta=f32_3)
-                    accumA(i=u16_n1, j=u16_n0, delta=f32_3)
-            if u16_n1 != 65535:
-                accumA(i=u16_n1, j=u16_n1, delta=f32_2)
+                    accumA(i=u8_n0, j=u8_n1, delta=f32_3)
+                    accumA(i=u8_n1, j=u8_n0, delta=f32_3)
+            if u8_n1 != 255:
+                accumA(i=u8_n1, j=u8_n1, delta=f32_2)
 
         # Current source stamp:
         # current is defined from n0 -> n1, so it subtracts from the n0 entry
         # of J and adds to the n1 entry.
         if u8_kind == 2:
-            if u16_n0 != 65535:
+            if u8_n0 != 255:
                 f32_2 = neg_comb(v=f32_1)
-                accumJ(i=u16_n0, delta=f32_2)
-            if u16_n1 != 65535:
-                accumJ(i=u16_n1, delta=f32_1)
+                accumJ(i=u8_n0, delta=f32_2)
+            if u8_n1 != 255:
+                accumJ(i=u8_n1, delta=f32_1)
 
         # Independent voltage source stamp:
         # allocate a fresh branch-variable row/column and emit the standard
         # MNA coupling terms plus the source value into J.
         if u8_kind == 3:
-            u16_aux = u16_next_aux
-            u16_next_aux = u16_next_aux + 1
-            if u16_n0 != 65535:
-                accumA(i=u16_aux, j=u16_n0, delta=f32_5)
+            u8_aux = u8_next_aux
+            u8_next_aux = u8_next_aux + 1
+            if u8_n0 != 255:
+                accumA(i=u8_aux, j=u8_n0, delta=f32_5)
                 f32_2 = neg_comb(v=f32_5)
-                accumA(i=u16_n0, j=u16_aux, delta=f32_2)
-            if u16_n1 != 65535:
+                accumA(i=u8_n0, j=u8_aux, delta=f32_2)
+            if u8_n1 != 255:
                 f32_2 = neg_comb(v=f32_5)
-                accumA(i=u16_aux, j=u16_n1, delta=f32_2)
-                accumA(i=u16_n1, j=u16_aux, delta=f32_5)
-            accumJ(i=u16_aux, delta=f32_1)
+                accumA(i=u8_aux, j=u8_n1, delta=f32_2)
+                accumA(i=u8_n1, j=u8_aux, delta=f32_5)
+            accumJ(i=u8_aux, delta=f32_1)
 
     # ------------------------------------------------------------------
     # Stage 3: dense LU decomposition with partial row pivoting.

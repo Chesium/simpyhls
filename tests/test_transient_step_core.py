@@ -13,7 +13,7 @@ TRANSIENT_CORE = TRANSIENT_CORE_PATH.read_text()
 SOLVE_CORE_TRANSIENT_PATH = ROOT / "examples" / "solve_core_transient.dsl.py"
 SOLVE_CORE_TRANSIENT = SOLVE_CORE_TRANSIENT_PATH.read_text()
 
-GROUND_SENTINEL = 65535
+GROUND_SENTINEL = 255
 KIND_R = 1
 KIND_I = 2
 KIND_V = 3
@@ -73,7 +73,9 @@ def normalize_transient_netlist(netlist: list[tuple]) -> list[tuple]:
             raise ValueError(f"Duplicate netlist index {index}")
         seen_indices.add(index)
         kind_code(kind_name)
-        normalized.append((index, kind_name, int(node1), int(node2), *values))
+        node0_idx = GROUND_SENTINEL if int(node1) == 0 else int(node1) - 1
+        node1_idx = GROUND_SENTINEL if int(node2) == 0 else int(node2) - 1
+        normalized.append((index, kind_name, node0_idx, node1_idx, *values))
     return normalized
 
 
@@ -306,10 +308,6 @@ def make_harness(
     )
 
 
-def node_to_idx(node: int) -> int:
-    return GROUND_SENTINEL if node == 0 else node - 1
-
-
 def source_value(kind_name: str, element: tuple, time: float) -> float:
     value0, value1, value2, value3 = element[4], element[5], element[6], element[7]
     if kind_name in {"V", "I"}:
@@ -334,9 +332,7 @@ def stamp_transient_reference(
     next_aux = base_node_n
 
     for element in elements:
-        _, kind_name, node1, node2, value0, _, _, _ = element
-        n0 = node_to_idx(node1)
-        n1 = node_to_idx(node2)
+        _, kind_name, n0, n1, value0, _, _, _ = element
 
         if kind_name == "R":
             conductance = 1.0 / value0

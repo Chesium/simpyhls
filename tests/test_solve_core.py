@@ -13,7 +13,7 @@ SOLVE_CORE = SOLVE_CORE_PATH.read_text()
 SOLVE_CORE_DC_PATH = ROOT / "examples" / "solve_core_dc.dsl.py"
 SOLVE_CORE_DC = SOLVE_CORE_DC_PATH.read_text()
 
-GROUND_SENTINEL = 65535
+GROUND_SENTINEL = 255
 KIND_R = 1
 KIND_I = 2
 KIND_V = 3
@@ -46,7 +46,9 @@ def normalize_solver_netlist(netlist: list[tuple]) -> list[tuple]:
             raise ValueError(f"Duplicate netlist index {index}")
         seen_indices.add(index)
         kind_code(kind_name)
-        normalized.append((index, kind_name, int(node1), int(node2), float(value)))
+        node0_idx = GROUND_SENTINEL if int(node1) == 0 else int(node1) - 1
+        node1_idx = GROUND_SENTINEL if int(node2) == 0 else int(node2) - 1
+        normalized.append((index, kind_name, node0_idx, node1_idx, float(value)))
     return normalized
 
 
@@ -213,10 +215,6 @@ def make_harness(base_node_n: int, netlist: list[tuple]) -> SimulationHarness:
     )
 
 
-def node_to_idx(node: int) -> int:
-    return GROUND_SENTINEL if node == 0 else node - 1
-
-
 def stamp_solver_reference(
     base_node_n: int, elements: list[tuple]
 ) -> tuple[list[list[float]], list[float], int]:
@@ -225,9 +223,7 @@ def stamp_solver_reference(
     J = [0.0 for _ in range(dim)]
     next_aux = base_node_n
 
-    for _, kind_name, node1, node2, value in elements:
-        n0 = node_to_idx(node1)
-        n1 = node_to_idx(node2)
+    for _, kind_name, n0, n1, value in elements:
 
         if kind_name == "R":
             conductance = 1.0 / value

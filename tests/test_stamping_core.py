@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STAMPING_CORE_PATH = ROOT / "examples" / "stamping_core.dsl.py"
 STAMPING_CORE = STAMPING_CORE_PATH.read_text()
 
-GROUND = 65535
+GROUND = 255
 KIND_R = 1
 KIND_I = 2
 KIND_V = 3

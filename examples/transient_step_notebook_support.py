@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TRANSIENT_CORE_PATH = ROOT / "examples" / "transient_step_core.dsl.py"
 TRANSIENT_CORE_SOURCE = TRANSIENT_CORE_PATH.read_text()
 
-GROUND_SENTINEL = 65535
+GROUND_SENTINEL = 255
 KIND_R = 1
 KIND_I = 2
 KIND_V = 3
@@ -649,3 +649,4 @@ __all__ = [
     "run_transient_sequence",
     "transient_registry",
 ]
+
